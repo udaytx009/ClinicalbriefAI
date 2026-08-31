@@ -1,0 +1,558 @@
+{
+  "name": "ClinicalBrief AI — DevNetwork Hackathon 2026",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json;\n\nconst patient_id = String(row.patient_id || '').trim();\nconst clinician_email = String(row.clinician_email || '').trim();\nconst document_type = String(row.document_type || 'lab_report').trim();\nconst priority = String(row.priority || 'normal').trim();\nconst notes = String(row.notes || '').trim();\n\nif (!patient_id) throw new Error('Missing patient_id in sheet row');\nif (!clinician_email) throw new Error('Missing clinician_email in sheet row');\n\nconst validTypes = ['lab_report', 'discharge_summary', 'radiology', 'pathology'];\nconst docType = validTypes.includes(document_type) ? document_type : 'lab_report';\n\n// Pass ALL sheet columns through — lab values included\nreturn [{ json: {\n  patient_id,\n  clinician_email,\n  document_type: docType,\n  priority,\n  notes,\n  received_at: new Date().toISOString(),\n  file_name: 'document.pdf',\n  // Lab value columns — passed as-is from sheet\n  hba1c: String(row.hba1c || '').trim(),\n  ldl: String(row.ldl || '').trim(),\n  bmi: String(row.bmi || '').trim(),\n  blood_pressure: String(row.blood_pressure || '').trim(),\n  medications: String(row.medications || '').trim(),\n  diagnoses: String(row.diagnoses || '').trim(),\n  hdl: String(row.hdl || '').trim(),\n  fasting_glucose: String(row.fasting_glucose || '').trim(),\n  age: String(row.age || '').trim(),\n  gender: String(row.gender || '').trim()\n}}];"
+      },
+      "id": "7e6320f7-2899-481d-84d5-3e03ccff035e",
+      "name": "Input Validator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst meta = $('Input Validator').first().json;\nconst extracted = raw.extracted || raw.data || raw.result || {};\n\n// NO fallbacks — use exactly what Nutrient extracted\nconst labValues = extracted.lab_values;\nconst medications = extracted.medications;\nconst diagnoses = extracted.diagnoses;\n\nif (!labValues) throw new Error('Format Extraction: lab_values missing from Nutrient output');\nif (!medications) throw new Error('Format Extraction: medications missing from Nutrient output');\nif (!diagnoses) throw new Error('Format Extraction: diagnoses missing from Nutrient output');\n\nconst confidence = extracted.confidence_scores || {};\nconst clinicalFlags = extracted.clinical_flags || [];\n\nconst lowConfidenceFields = [];\nfor (const [field, score] of Object.entries(confidence)) {\n  if (typeof score === 'number' && score < 0.80) {\n    lowConfidenceFields.push({ field, score: Math.round(score * 100) + '%' });\n  }\n}\n\nconst scores = Object.values(confidence).filter(v => typeof v === 'number');\nconst avgConfidence = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0.0;\n\n// requires_review if avg confidence low, too many low-confidence fields, OR clinical flags present\nconst requiresReview = avgConfidence < 0.80 || lowConfidenceFields.length > 2 || clinicalFlags.length > 0;\n\nreturn [{ json: {\n  patient_id: meta.patient_id,\n  clinician_email: meta.clinician_email,\n  document_type: meta.document_type,\n  priority: meta.priority,\n  received_at: meta.received_at,\n  file_name: meta.file_name,\n  lab_values: labValues,\n  medications,\n  diagnoses,\n  physician_notes: extracted.physician_notes || '',\n  patient_age: (extracted.patient_demographics || {}).age || 'unknown',\n  report_date: (extracted.dates || {}).report_date || new Date().toISOString().split('T')[0],\n  extraction_confidence: Math.round(avgConfidence * 100) / 100,\n  low_confidence_fields: lowConfidenceFields,\n  clinical_flags: clinicalFlags,\n  requires_review: requiresReview,\n  agent_context: JSON.stringify({ lab_values: labValues, medications, diagnoses, document_type: meta.document_type }, null, 2)\n}}];"
+      },
+      "id": "74428cf7-ddf2-4003-8d4e-71b05ac1ff78",
+      "name": "Format Extraction Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Patient document data:\n{{ $('Build Agent Prompt').first().json.agent_context }}\n\nPatient ID: {{ $('Build Agent Prompt').first().json.patient_id }}\nDocument type: {{ $('Build Agent Prompt').first().json.document_type }}\nReport date: {{ $('Build Agent Prompt').first().json.report_date }}\n\nReal-time clinical evidence from PubMed:\n{{ $('Build Agent Prompt').first().json.serp_evidence }}\n\nTasks:\n1. Use retrieve_clinical_protocols tool to get matching protocol documents from KB\n2. Generate structured clinical brief using patient data AND the PubMed evidence above\n3. Cite sources in evidence_sources with titles and URLs\n\nRules: Always cite sources. Reference actual lab values. Output valid JSON.",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "id": "553adf8f-3f09-4552-b4a2-204de0d33231",
+      "name": "Clinical Intelligence Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1088,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gpt-4o"
+        },
+        "responsesApiEnabled": false,
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "1c00aab3-85b6-441e-93ea-907a49c6e792",
+      "name": "GPT-4o Clinical Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        896,
+        432
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolName": "retrieve_clinical_protocols",
+        "toolDescription": "Retrieve matching clinical protocol guidelines from the knowledge base. Use for treatment standards and diagnostic criteria.",
+        "memoryKey": "clinical_protocol_kb",
+        "topK": 3
+      },
+      "id": "7971dbf0-0b43-4f4c-a0a7-e180e6ec0479",
+      "name": "Retrieve Clinical Protocols",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "af443d5c-aed2-4d8f-9c6b-235d2ac7397b",
+      "name": "OpenAI Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1280,
+        640
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\"summary\":\"Patient presents with HbA1c 7.2%\",\"primary_diagnosis\":\"Type 2 Diabetes\",\"risk_level\":\"moderate\",\"recommendations\":[{\"action\":\"Increase metformin\",\"evidence\":\"ADA 2024\",\"confidence\":0.91}],\"evidence_sources\":[{\"title\":\"ADA Standards 2024\",\"url\":\"https://pubmed.ncbi.nlm.nih.gov/\"}],\"drug_interactions\":[],\"protocol_references\":[\"ADA 2024\"],\"confidence_score\":0.89,\"requires_review\":false,\"low_confidence_fields\":[],\"clinician_notes\":\"Follow-up in 3 months\"}"
+      },
+      "id": "51b884cd-fa38-4493-9918-b4922a85a59c",
+      "name": "Clinical Brief Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1424,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOut = $input.first().json;\nconst ctx = $('Format Extraction Output').first().json;\n\n// Agent score lives under output.confidence_score (structured parser output)\nconst agentScore = (agentOut.output || {}).confidence_score || agentOut.confidence_score;\nconst extractionScore = ctx.extraction_confidence || 0;\n\nif (agentScore === undefined || agentScore === null) {\n  throw new Error('No confidence_score in agent output — check Clinical Brief Parser schema');\n}\n\nconst combinedConfidence = Math.round((agentScore + extractionScore) / 2 * 100) / 100;\n\nconst clinicalFlags = ctx.clinical_flags || [];\nconst requiresReview = (agentOut.output || {}).requires_review || ctx.requires_review || combinedConfidence < 0.80 || clinicalFlags.length > 0;\n\nreturn [{ json: {\n  ...agentOut,\n  output: agentOut.output || {},\n  patient_id: ctx.patient_id,\n  clinician_email: ctx.clinician_email,\n  document_type: ctx.document_type,\n  report_date: ctx.report_date,\n  file_name: ctx.file_name,\n  extraction_confidence: extractionScore,\n  lab_values: ctx.lab_values,\n  medications: ctx.medications,\n  diagnoses: ctx.diagnoses,\n  clinical_flags: clinicalFlags,\n  confidence_score: combinedConfidence,\n  requires_review: requiresReview,\n  low_confidence_fields: [...((agentOut.output || {}).low_confidence_fields || []), ...(ctx.low_confidence_fields || [])],\n  generated_at: new Date().toISOString()\n}}];"
+      },
+      "id": "96d21e0b-d1a8-406e-8312-7a09d57702c2",
+      "name": "Validate & Merge Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1616,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "conf-check",
+              "leftValue": "={{ $json.requires_review }}",
+              "operator": {
+                "operation": "false",
+                "type": "boolean"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "574b2087-823a-4a64-81d1-32c48395b26e",
+      "name": "Confidence Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1840,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://na1.fusion.foxit.com/api/esign/v1/envelopes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-KEY",
+              "value": "YOUR_FOXIT_API_KEY"
+            },
+            {
+              "name": "X-API-SECRET",
+              "value": "YOUR_FOXIT_API_SECRET"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "92e205fd-9162-442c-99f1-7a5955ff34b2",
+      "name": "Foxit — Generate & eSign Brief",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2064,
+        112
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Validate & Merge Output').first().json.clinician_email }}",
+        "subject": "=✅ Clinical Brief Sent for Signature — Patient {{ $json.patient_id }}",
+        "message": "=<div style=\"font-family:Arial,sans-serif;max-width:600px;\">\n<div style=\"background:#0D6E58;color:white;padding:16px;border-radius:8px 8px 0 0;\">\n  <strong>✅ Clinical Brief Generated — Patient {{ $('Validate & Merge Output').first().json.patient_id }}</strong><br>\n  <small>Confidence: {{ Math.round(($('Validate & Merge Output').first().json.confidence_score || 0) * 100) }}% | {{ $('Validate & Merge Output').first().json.report_date }}</small>\n</div>\n<div style=\"padding:20px;border:1px solid #ddd;border-radius:0 0 8px 8px;\">\n  <p><strong>Summary:</strong> {{ $('Validate & Merge Output').first().json.output.summary }}</p>\n  <p><strong>Primary Diagnosis:</strong> {{ $('Validate & Merge Output').first().json.output.primary_diagnosis }}</p>\n  <p><strong>Risk Level:</strong> {{ $('Validate & Merge Output').first().json.output.risk_level }}</p>\n  <hr style=\"border:none;border-top:1px solid #eee;margin:12px 0;\">\n  <p><strong>Recommendations:</strong></p>\n  {{ ($('Validate & Merge Output').first().json.output.recommendations || []).map((r, i) => '<p>' + (i+1) + '. ' + r.action + '<br><small style=\"color:#888;\">Evidence: ' + r.evidence + '</small></p>').join('') }}\n  <hr style=\"border:none;border-top:1px solid #eee;margin:12px 0;\">\n  <p><strong>Medications:</strong> {{ ($('Validate & Merge Output').first().json.medications || []).join(', ') }}</p>\n  <p><strong>Physician Notes:</strong> {{ $('Validate & Merge Output').first().json.output.clinician_notes }}</p>\n  <p style=\"background:#f0f9f6;padding:10px;border-radius:6px;font-size:12px;color:#0D6E58;\">📋 Foxit eSign signing request has been sent separately. This brief is pending clinician signature.</p>\n  <p style=\"color:#888;font-size:11px;\">Generated by ClinicalBrief AI | {{ $('Validate & Merge Output').first().json.generated_at }}</p>\n</div>\n</div>",
+        "options": {}
+      },
+      "id": "95a4c027-0a56-4ca3-b9e8-968060512235",
+      "name": "Deliver Signed Brief",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2288,
+        112
+      ],
+      "webhookId": "46691a22-f37a-4f5b-ae19-eafa05f4383d",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Validate & Merge Output').first().json.clinician_email }}",
+        "subject": "=⚠️ REVIEW REQUIRED: Clinical Brief — Patient {{ $json.patient_id }}",
+        "message": "=<div style=\"font-family:Arial,sans-serif;max-width:600px;\"><div style=\"background:#C0431A;color:white;padding:16px;border-radius:8px 8px 0 0;\"><strong>⚠️ Manual Review Required</strong><br><small>Confidence below threshold — clinician review needed before signing</small></div><div style=\"padding:20px;border:1px solid #ddd;\"><p><strong>Patient ID:</strong> {{ $('Validate & Merge Output').first().json.patient_id }}</p><p><strong>Confidence Score:</strong> {{ Math.round($('Validate & Merge Output').first().json.confidence_score * 100) }}%</p><p><strong>Summary:</strong> {{ $('Validate & Merge Output').first().json.output.summary }}</p><p><strong>Primary Diagnosis:</strong> {{ $('Validate & Merge Output').first().json.output.primary_diagnosis }}</p><p><strong>Risk Level:</strong> {{ $('Validate & Merge Output').first().json.output.risk_level }}</p><hr style=\"border:none;border-top:1px solid #eee;margin:12px 0;\"><p><strong>Recommendations:</strong></p>{{ ($('Validate & Merge Output').first().json.output.recommendations || []).map((r, i) => '<p>' + (i+1) + '. ' + r.action + '<br><small style=\"color:#888;\">Evidence: ' + r.evidence + '</small></p>').join('') }}<hr style=\"border:none;border-top:1px solid #eee;margin:12px 0;\"><p><strong>Medications:</strong> {{ ($('Validate & Merge Output').first().json.medications || []).join(', ') }}</p><p><strong>Lab Values:</strong> HbA1c: {{ ($('Validate & Merge Output').first().json.lab_values || {}).hba1c }} | LDL: {{ ($('Validate & Merge Output').first().json.lab_values || {}).ldl_cholesterol }} | BMI: {{ ($('Validate & Merge Output').first().json.lab_values || {}).bmi }} | BP: {{ ($('Validate & Merge Output').first().json.lab_values || {}).blood_pressure }}</p>{{ ($('Validate & Merge Output').first().json.clinical_flags || []).length > 0 ? '<div style=\"background:#fff3f0;padding:12px;border-radius:6px;border-left:4px solid #C0431A;margin:12px 0;\"><strong style=\"color:#C0431A;\">⚠️ Clinical Flags — Reason for Review:</strong>' + ($('Validate & Merge Output').first().json.clinical_flags || []).map(f => '<p style=\"margin:4px 0;font-size:12px;\">' + f + '</p>').join('') + '</div>' : '' }}<p style=\"color:#888;font-size:11px;\">ClinicalBrief AI | {{ $('Validate & Merge Output').first().json.generated_at }}</p></div></div>",
+        "options": {}
+      },
+      "id": "861e94c5-3179-4aed-9407-cff2a85f99c3",
+      "name": "Human Review Queue",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2288,
+        304
+      ],
+      "webhookId": "72fc38de-e489-41ce-85e0-884f7c888d3c",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\n// Structured audit record — visible in n8n execution log\nconst auditRecord = {\n  patient_id: d.patient_id,\n  document_type: d.document_type,\n  confidence_score: d.confidence_score,\n  extraction_confidence: d.extraction_confidence,\n  requires_review: d.requires_review,\n  clinical_flags: d.clinical_flags || [],\n  low_confidence_fields: d.low_confidence_fields || [],\n  risk_level: (d.output || {}).risk_level || 'unknown',\n  generated_at: d.generated_at,\n  routed_to: d.requires_review ? 'human_review' : 'foxit_esign'\n};\nconsole.log('CLINICALBRIEF_AUDIT:', JSON.stringify(auditRecord));\nreturn [{ json: { ...d, audit_logged: true, audit_record: auditRecord } }];"
+      },
+      "id": "af65f60f-201d-4f6c-915f-5351cf2131b3",
+      "name": "Audit Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $('Input Validator').first().json;\n\nconst required = ['hba1c', 'ldl', 'diagnoses'];\nfor (const field of required) {\n  if (!row[field] || String(row[field]).trim() === '') {\n    throw new Error(`Missing required field: ${field}. Please fill in all lab value columns in the sheet.`);\n  }\n}\n\nconst hba1c = String(row.hba1c).trim();\nconst ldl = String(row.ldl).trim();\nconst bmi = String(row.bmi || 'not provided').trim();\nconst blood_pressure = String(row.blood_pressure || 'not provided').trim();\nconst fasting_glucose = String(row.fasting_glucose || 'not provided').trim();\nconst hdl = String(row.hdl || 'not provided').trim();\n\nconst medicationsRaw = String(row.medications || '').trim();\nconst medications = medicationsRaw ? medicationsRaw.split(',').map(m => m.trim()).filter(Boolean) : [];\n\nconst diagnosesRaw = String(row.diagnoses || '').trim();\nconst diagnoses = diagnosesRaw ? diagnosesRaw.split(',').map(d => d.trim()).filter(Boolean) : [];\n\nconst isVague = (s) => ['unknown','possible','not provided','unclear','unsure'].some(w => s.toLowerCase().includes(w));\n\n// Parse numeric values for threshold checks\nconst hba1c_val = parseFloat(hba1c);\nconst ldl_val = parseFloat(ldl);\nconst bmi_val = parseFloat(bmi);\nconst systolic = parseFloat((blood_pressure.split('/')[0] || '0'));\n\n// Clinical threshold flags — extreme values require human review\nconst clinicalFlags = [];\nif (!isNaN(hba1c_val) && hba1c_val > 10.0) clinicalFlags.push(`HbA1c critically high: ${hba1c} (>10% requires urgent review)`);\nif (!isNaN(ldl_val) && ldl_val > 190) clinicalFlags.push(`LDL critically elevated: ${ldl} (>190 mg/dL requires urgent review)`);\nif (!isNaN(bmi_val) && bmi_val > 40) clinicalFlags.push(`BMI severely obese: ${bmi} (>40 requires specialist review)`);\nif (!isNaN(systolic) && systolic > 160) clinicalFlags.push(`Blood pressure hypertensive crisis: ${blood_pressure} (>160 systolic requires urgent review)`);\n\nconst confidence_scores = {\n  hba1c: !isNaN(hba1c_val) && hba1c_val > 10.0 ? 0.60 : 0.98,\n  ldl_cholesterol: !isNaN(ldl_val) && ldl_val > 190 ? 0.60 : 0.96,\n  bmi: bmi === 'not provided' ? 0.50 : (!isNaN(bmi_val) && bmi_val > 40 ? 0.62 : 0.95),\n  blood_pressure: blood_pressure === 'not provided' ? 0.50 : (!isNaN(systolic) && systolic > 160 ? 0.62 : 0.94),\n  medications: medications.length > 0 && !isVague(medicationsRaw) ? 0.92 : 0.40,\n  diagnoses: diagnoses.length > 0 && !isVague(diagnosesRaw) ? 0.91 : 0.42\n};\n\nreturn [{ json: {\n  extracted: {\n    lab_values: { hba1c, ldl_cholesterol: ldl, bmi, blood_pressure, fasting_glucose, hdl_cholesterol: hdl },\n    medications,\n    diagnoses,\n    patient_demographics: { age: String(row.age || 'unknown').trim(), gender: String(row.gender || 'unknown').trim() },\n    dates: { report_date: new Date().toISOString().split('T')[0] },\n    physician_notes: String(row.notes || '').trim(),\n    confidence_scores,\n    clinical_flags: clinicalFlags\n  },\n  source: 'google_sheets_patient_intake',\n  patient_id: row.patient_id,\n  document_type: row.document_type\n}}];"
+      },
+      "id": "9e14e585-ad9e-442f-8fa4-25d17dbad5c2",
+      "name": "Nutrient — Extract Lab Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        480
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "48944ae6-e35c-4e73-9bd6-a2b3b19fc98e",
+      "name": "Google Sheets Trigger",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 4,
+      "position": [
+        0,
+        208
+      ],
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "YOUR_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets Trigger account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://serpapi.com/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "YOUR_SERPAPI_KEY"
+            },
+            {
+              "name": "engine",
+              "value": "google_scholar"
+            },
+            {
+              "name": "q",
+              "value": "={{ $('Format Extraction Output').first().json.diagnoses.join(', ') + ' clinical guidelines 2024' }}"
+            },
+            {
+              "name": "num",
+              "value": "5"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "b5167a9a-fbdc-467f-af1e-96a1b1028956",
+      "name": "SerpApi — Clinical Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        672,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Format Extraction Output').first().json;\nconst serpNode = 'SerpApi — Clinical Search';\nlet evidence = 'No search results available';\ntry {\n  const serpResults = $('SerpApi — Clinical Search').first().json;\n  evidence = (serpResults.organic_results || []).slice(0,3)\n    .map((r, i) => (i+1) + '. ' + r.title + ' — ' + (r.snippet || '').substring(0,150) + (r.link ? ' [' + r.link + ']' : ''))\n    .join('\\n');\n} catch(e) { evidence = 'Search unavailable'; }\n\nconst built_prompt = 'Patient document data:\\n' + ctx.agent_context +\n  '\\n\\nPatient ID: ' + ctx.patient_id +\n  '\\nDocument type: ' + ctx.document_type +\n  '\\nReport date: ' + ctx.report_date +\n  '\\n\\nReal-time clinical evidence from PubMed (SerpApi):\\n' + evidence +\n  '\\n\\nTasks:\\n1. Use retrieve_clinical_protocols tool to get matching protocol documents from KB\\n2. Generate structured clinical brief using patient data AND the PubMed evidence above\\n3. Cite the PubMed sources in evidence_sources with titles and URLs\\n\\nRules: Always cite sources. Reference actual lab values in summary. Output valid JSON.';\n\nreturn [{ json: { ...ctx, built_prompt } }];"
+      },
+      "id": "fc1a0d74-4739-4eb1-a834-ae7c2fd248ed",
+      "name": "Build Agent Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        208
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Format Extraction Output": {
+      "main": [
+        [
+          {
+            "node": "SerpApi — Clinical Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clinical Intelligence Agent": {
+      "main": [
+        [
+          {
+            "node": "Validate & Merge Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4o Clinical Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Clinical Intelligence Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve Clinical Protocols": {
+      "ai_tool": [
+        [
+          {
+            "node": "Clinical Intelligence Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Embeddings": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Retrieve Clinical Protocols",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clinical Brief Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Clinical Intelligence Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Merge Output": {
+      "main": [
+        [
+          {
+            "node": "Confidence Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confidence Gate": {
+      "main": [
+        [
+          {
+            "node": "Foxit — Generate & eSign Brief",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Human Review Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Foxit — Generate & eSign Brief": {
+      "main": [
+        [
+          {
+            "node": "Deliver Signed Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deliver Signed Brief": {
+      "main": [
+        [
+          {
+            "node": "Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Review Queue": {
+      "main": [
+        [
+          {
+            "node": "Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input Validator": {
+      "main": [
+        [
+          {
+            "node": "Nutrient — Extract Lab Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nutrient — Extract Lab Data": {
+      "main": [
+        [
+          {
+            "node": "Format Extraction Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Trigger": {
+      "main": [
+        [
+          {
+            "node": "Input Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SerpApi — Clinical Search": {
+      "main": [
+        [
+          {
+            "node": "Clinical Intelligence Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Agent Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Agent Prompt": {
+      "main": [
+        [
+          {
+            "node": "Clinical Intelligence Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "f787235f-5659-4ac4-a970-7bb447db52c5",
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp",
+    "instanceId": "57797110d9d840668b2377ae2257ac12f948edac168e177bcb6afd069ff5ca9e"
+  },
+  "nodeGroups": [],
+  "id": "sBl3HSAqigFBB2t1",
+  "tags": []
+}

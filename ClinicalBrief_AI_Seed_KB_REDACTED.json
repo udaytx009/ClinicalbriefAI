@@ -1,0 +1,160 @@
+{
+  "name": "ClinicalBrief AI — Seed Clinical Protocol KB",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "2e4477d5-150f-458c-8a17-3aa2cf8b790f",
+      "name": "Run Once — Seed Clinical KB",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nreturn [\n  { json: { doc_id: 'KB-01', category: 'diabetes', pageContent: 'ADA 2024 Standards of Medical Care — Glycemic Targets. For most non-pregnant adults with Type 2 Diabetes, an HbA1c goal of less than 7% is appropriate. For patients with HbA1c above 9%, consider combination therapy or insulin. When HbA1c is above 7%, intensify management by adding a second-line agent such as GLP-1 receptor agonist (preferred for cardiovascular or renal benefit) or SGLT2 inhibitor. Metformin remains first-line therapy unless contraindicated. Monitor HbA1c every 3 months until stable, then every 6 months. Fasting glucose target: 80-130 mg/dL. Post-prandial glucose target: less than 180 mg/dL.', source: 'ADA Standards of Medical Care 2024', specialty: 'endocrinology' } },\n  { json: { doc_id: 'KB-02', category: 'cardiovascular', pageContent: 'ACC/AHA 2023 Cardiovascular Risk Guidelines — LDL Targets. For patients with Type 2 Diabetes aged 40-75, statin therapy is recommended. LDL cholesterol target: less than 100 mg/dL for moderate risk, less than 70 mg/dL for high risk. LDL above 130 mg/dL warrants high-intensity statin therapy (atorvastatin 40-80mg or rosuvastatin 20-40mg). If LDL remains above target on maximum tolerated statin, add ezetimibe. PCSK9 inhibitors for very high-risk patients. Lifestyle: reduce saturated fat, increase soluble fiber, aerobic exercise 150 min/week.', source: 'ACC/AHA 2023 Cardiovascular Risk Guidelines', specialty: 'cardiology' } },\n  { json: { doc_id: 'KB-03', category: 'hypertension', pageContent: 'JNC 8 Hypertension Guidelines. Blood pressure target for adults with diabetes: less than 130/80 mmHg. Blood pressure 130-139/80-89 mmHg (Stage 1): lifestyle modification first — DASH diet, sodium restriction below 2.3g/day, aerobic exercise, weight loss. If target not achieved in 3 months, add ACE inhibitor or ARB as first-line for diabetic patients. ACE inhibitors (lisinopril, enalapril) provide renal protection in diabetic nephropathy. Monitor potassium and creatinine after starting ACE inhibitor. Avoid NSAIDs which raise blood pressure.', source: 'JNC 8 Hypertension Guidelines', specialty: 'cardiology' } },\n  { json: { doc_id: 'KB-04', category: 'metabolic', pageContent: 'WHO Metabolic Syndrome Diagnostic Criteria. Metabolic syndrome: 3 or more of waist circumference above 102cm men or 88cm women; triglycerides above 150 mg/dL; HDL below 40 mg/dL men or 50 mg/dL women; blood pressure above 130/85 mmHg; fasting glucose above 100 mg/dL. HDL below 42 mg/dL in males indicates low protective cholesterol — increase omega-3 fatty acids, exercise, reduce refined carbohydrates. Triglycerides above 168 mg/dL require dietary intervention and possible fibrate therapy.', source: 'WHO Metabolic Syndrome Criteria', specialty: 'internal_medicine' } },\n  { json: { doc_id: 'KB-05', category: 'renal', pageContent: 'NKF KDIGO CKD Guidelines for Diabetic Nephropathy. Creatinine above 1.1 mg/dL in males warrants eGFR calculation. eGFR below 60 indicates CKD Stage 3 — reduce metformin dose, increase monitoring. ACE inhibitors and ARBs are renoprotective in diabetic nephropathy — first-line for hypertension with proteinuria. SGLT2 inhibitors (empagliflozin, dapagliflozin) provide additional renal protection and are preferred second-line agents in CKD. Monitor potassium, creatinine, blood pressure every 3-6 months. Protein intake: 0.8g/kg/day.', source: 'NKF KDIGO CKD Guidelines 2023', specialty: 'nephrology' } },\n  { json: { doc_id: 'KB-06', category: 'preventive', pageContent: 'USPSTF Preventive Care Recommendations for Diabetes and Cardiovascular Risk. Annual screening for diabetic retinopathy via dilated eye exam. Annual foot exam including monofilament testing for peripheral neuropathy. Dental exam every 6 months. Influenza vaccine annually. Aspirin 75-100mg daily for diabetic patients with established cardiovascular disease. Screen for depression annually. Smoking cessation — smoking increases cardiovascular risk 2-3 fold in diabetic patients.', source: 'USPSTF Preventive Care Guidelines 2024', specialty: 'preventive_medicine' } }\n];\n"
+      },
+      "id": "0b7c7c30-ad0e-461d-ac31-d40c0d6b2749",
+      "name": "Clinical Protocol Documents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "memoryKey": "clinical_protocol_kb",
+        "clearStore": true
+      },
+      "id": "a09e1f20-e6b0-4860-bae1-88dcd27378e5",
+      "name": "Insert into Clinical KB",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1,
+      "position": [
+        448,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "af443d5c-aed2-4d8f-9c6b-235d2ac7397b",
+      "name": "OpenAI Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        464,
+        336
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "363e27b1-6056-41ed-b0a0-d72a91f6ac91",
+      "name": "JSON Document Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentJsonInputLoader",
+      "typeVersion": 1.1,
+      "position": [
+        688,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nreturn [{ json: {\n  status: 'Clinical KB seeded successfully',\n  store_key: 'clinical_protocol_kb',\n  documents_loaded: 6,\n  categories: ['diabetes','cardiovascular','hypertension','metabolic','renal','preventive'],\n  sources: ['ADA 2024','ACC/AHA 2023','JNC 8','WHO','NKF KDIGO 2023','USPSTF 2024'],\n  seeded_at: new Date().toISOString()\n}}];\n"
+      },
+      "id": "f9f82aa9-e212-446e-975e-aeaadc0df53c",
+      "name": "Confirm KB Loaded",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        112
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run Once — Seed Clinical KB": {
+      "main": [
+        [
+          {
+            "node": "Clinical Protocol Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clinical Protocol Documents": {
+      "main": [
+        [
+          {
+            "node": "Insert into Clinical KB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert into Clinical KB": {
+      "main": [
+        [
+          {
+            "node": "Confirm KB Loaded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Embeddings": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Insert into Clinical KB",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSON Document Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Insert into Clinical KB",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "1c24d5c8-6156-4d5a-8f26-6b2648578211",
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp",
+    "instanceId": "57797110d9d840668b2377ae2257ac12f948edac168e177bcb6afd069ff5ca9e"
+  },
+  "nodeGroups": [],
+  "id": "SStYwG7ydw4gwliW",
+  "tags": []
+}
