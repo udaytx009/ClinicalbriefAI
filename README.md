@@ -1,3 +1,5 @@
+# Published to LearnHive Labs - a volunteer-run, non-commercial education and artificial intelligence project aimed to accelerate students, researchers and innovators.
+
 # ClinicalBrief AI
 
 An agentic Clinical Decision Support (CDS) pipeline built in n8n. Patient lab data enters via Google Sheet. GPT-4o searches NIH PubMed in real time, retrieves clinical protocol guidelines via RAG, scores confidence, and delivers a source-cited clinical brief to the clinician's inbox — routing uncertain or extreme cases to human review before any document is signed.
